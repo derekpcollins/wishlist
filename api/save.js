@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
-const { extract } = require("@extractus/article-meta");
+const fetch = require("node-fetch");
+const unfluff = require("unfluff");
 
 const filePath = path.join(process.cwd(), "data", "wishlist.json");
 
@@ -9,18 +10,18 @@ module.exports = async (req, res) => {
 		return res.status(405).json({ error: "Method Not Allowed" });
 	}
 
-	// Parse URL from body
 	const url = req.body?.url;
 	if (!url || typeof url !== "string") {
 		return res.status(400).json({ error: "Missing or invalid URL" });
 	}
 
-	// Scrape metadata
 	let meta = {};
 	try {
-		meta = await extract(url);
-	} catch {
-		// Gracefully continue even if metadata scraping fails
+		const response = await fetch(url);
+		const html = await response.text();
+		meta = unfluff(html);
+	} catch (err) {
+		console.error("Metadata extraction failed:", err);
 	}
 
 	const item = {
@@ -32,7 +33,6 @@ module.exports = async (req, res) => {
 		date: new Date().toISOString(),
 	};
 
-	// Read existing data
 	let data = [];
 	try {
 		if (fs.existsSync(filePath)) {
@@ -40,13 +40,11 @@ module.exports = async (req, res) => {
 			data = JSON.parse(raw);
 		}
 	} catch {
-		// If file is unreadable or invalid, fallback to empty array
 		data = [];
 	}
 
 	data.push(item);
 
-	// Write updated data back to file
 	try {
 		fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
 	} catch (err) {
