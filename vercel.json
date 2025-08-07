@@ -5,5 +5,10 @@
 	],
 	"routes": [
 		{ "src": "/api/save", "dest": "/api/save.js" }
-	]
+	],
+	"functions": {
+		"api/**/*.js": {
+			"runtime": "nodejs20.x"
+		}
+	}
 }

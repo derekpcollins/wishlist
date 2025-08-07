@@ -1,49 +1,57 @@
-// api/save.js
-import { promises as fs } from 'fs';
-import path from 'path';
-import { parse } from 'node-html-parser';
+const fs = require("fs");
+const path = require("path");
+const { extract } = require("@extractus/article-meta");
 
-export default async function handler(req, res) {
-	if (req.method !== 'POST') {
-		return res.status(405).json({ error: 'Method not allowed' });
+const filePath = path.join(process.cwd(), "data", "wishlist.json");
+
+module.exports = async (req, res) => {
+	if (req.method !== "POST") {
+		return res.status(405).json({ error: "Method Not Allowed" });
 	}
 
-	const { url } = req.body;
-	if (!url) {
-		return res.status(400).json({ error: 'Missing URL in body' });
+	// Parse URL from body
+	const url = req.body?.url;
+	if (!url || typeof url !== "string") {
+		return res.status(400).json({ error: "Missing or invalid URL" });
 	}
 
+	// Scrape metadata
+	let meta = {};
 	try {
-		// 1. Fetch the page
-		const response = await fetch(url);
-		const html = await response.text();
-
-		// 2. Parse metadata
-		const root = parse(html);
-		const title = root.querySelector('title')?.text || '';
-		const description = root.querySelector('meta[name="description"]')?.getAttribute('content') || '';
-		const image = root.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
-		const site = new URL(url).hostname;
-
-		const newEntry = {
-			url,
-			title,
-			description,
-			image,
-			site,
-			addedAt: new Date().toISOString()
-		};
-
-		// 3. Append to JSON file
-		const filePath = path.join(process.cwd(), 'data/wishlist.json');
-		const fileData = await fs.readFile(filePath, 'utf8');
-		const wishlist = JSON.parse(fileData);
-		wishlist.push(newEntry);
-		await fs.writeFile(filePath, JSON.stringify(wishlist, null, 2));
-
-		return res.status(200).json({ success: true, data: newEntry });
-	} catch (err) {
-		console.error(err);
-		return res.status(500).json({ error: 'Internal Server Error' });
+		meta = await extract(url);
+	} catch {
+		// Gracefully continue even if metadata scraping fails
 	}
-}
+
+	const item = {
+		url,
+		title: meta?.title || "Unknown",
+		description: meta?.description || "",
+		image: meta?.image || "",
+		site: new URL(url).hostname,
+		date: new Date().toISOString(),
+	};
+
+	// Read existing data
+	let data = [];
+	try {
+		if (fs.existsSync(filePath)) {
+			const raw = fs.readFileSync(filePath, "utf8");
+			data = JSON.parse(raw);
+		}
+	} catch {
+		// If file is unreadable or invalid, fallback to empty array
+		data = [];
+	}
+
+	data.push(item);
+
+	// Write updated data back to file
+	try {
+		fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+	} catch (err) {
+		return res.status(500).json({ error: "Failed to write data" });
+	}
+
+	res.status(200).json({ saved: true, item });
+};
